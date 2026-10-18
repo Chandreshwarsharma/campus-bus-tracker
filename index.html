@@ -1,0 +1,847 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="color-scheme" content="light dark" />
+<link rel="icon" href="data:," />
+<title>Real-Time Bus Tracker — Gorakhpur</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet" />
+<style>
+:root{
+  --ink:#12211f; --ink2:#3d5550; --paper:#eef3f1;
+  --glass:rgba(255,255,255,.62); --glass2:rgba(255,255,255,.78); --glass-brd:rgba(255,255,255,.65);
+  --glass-shadow:0 10px 34px rgba(10,40,36,.18);
+  --teal:#0e7a6d; --teal-d:#0a5c53; --amber:#e8930c; --red:#d64541; --green:#1d9e6c;
+  --r1:#0e7a6d; --r2:#c25e10; --r3:#2f5fb3;
+  --chip:rgba(255,255,255,.55);
+  --line:rgba(18,33,31,.12);
+  --mono:'IBM Plex Mono',ui-monospace,monospace;
+  --sans:'Archivo',system-ui,-apple-system,'Segoe UI',sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --ink:#eaf3f0; --ink2:#a9c2bb; --paper:#0c1715;
+    --glass:rgba(16,32,29,.58); --glass2:rgba(16,32,29,.78); --glass-brd:rgba(255,255,255,.14);
+    --glass-shadow:0 10px 34px rgba(0,0,0,.45);
+    --chip:rgba(255,255,255,.08); --line:rgba(255,255,255,.14);
+    --teal:#2ec4ae; --teal-d:#2ec4ae; --amber:#f5a623;
+  }
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;font-family:var(--sans);color:var(--ink);background:var(--paper);overflow:hidden}
+button{font-family:inherit;cursor:pointer}
+input,select{font-family:inherit}
+/* ---------- MAP ---------- */
+#map{position:fixed;inset:0;z-index:0;background:#cfdcd6}
+.leaflet-container{font-family:var(--sans)}
+#map.tiles-dark .leaflet-tile-pane{filter:invert(1) hue-rotate(185deg) brightness(.92) contrast(.92) saturate(.55)}
+.map-fallback{position:fixed;inset:0;z-index:880;display:none;align-items:center;justify-content:center;padding:20px;text-align:center;background:transparent;pointer-events:none}
+.map-fallback>div{pointer-events:auto}
+.map-fallback.show{display:flex}
+.bus-pin{background:transparent;border:none}
+.bus-dot{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font:700 11px var(--mono);border:2.5px solid rgba(255,255,255,.92);box-shadow:0 4px 14px rgba(0,0,0,.35);backdrop-filter:blur(2px)}
+.stop-pin{background:transparent;border:none}
+.stop-dot{width:16px;height:16px;border-radius:50%;background:rgba(255,255,255,.9);border:3px solid var(--teal);box-shadow:0 2px 8px rgba(0,0,0,.3)}
+.stop-dot.major{border-color:var(--amber);width:20px;height:20px}
+.leaflet-popup-content-wrapper{background:var(--glass2);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border:1px solid var(--glass-brd);border-radius:14px;color:var(--ink);box-shadow:var(--glass-shadow)}
+.leaflet-popup-tip{background:var(--glass2)}
+.leaflet-popup-content{font-family:var(--sans);font-size:13px;line-height:1.5;margin:12px 14px}
+.popup-t{font-weight:800;font-size:14px}
+/* ---------- GLASS UTIL ---------- */
+.glass{background:var(--glass);backdrop-filter:blur(16px) saturate(1.5);-webkit-backdrop-filter:blur(16px) saturate(1.5);border:1px solid var(--glass-brd);box-shadow:var(--glass-shadow)}
+/* ---------- TOP BAR ---------- */
+.topbar{position:fixed;top:12px;left:12px;right:12px;z-index:900;display:flex;gap:10px;align-items:stretch;flex-wrap:wrap}
+.brand{border-radius:16px;padding:10px 16px;display:flex;align-items:center;gap:12px}
+.brand .mark{width:38px;height:38px;border-radius:11px;background:var(--teal);color:#fff;display:flex;align-items:center;justify-content:center;flex:none}
+.brand h1{margin:0;font-size:17px;font-weight:800;letter-spacing:-.01em;line-height:1.1}
+.brand p{margin:2px 0 0;font-size:11.5px;color:var(--ink2);font-weight:600}
+.live-clock{margin-left:2px;text-align:right}
+.live-clock .t{font:600 17px var(--mono)}
+.live-clock .d{font-size:10.5px;color:var(--ink2);font-weight:600}
+.dot-live{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--green);margin-right:5px;animation:pulse 1.6s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(29,158,108,.5)}70%{box-shadow:0 0 0 7px rgba(29,158,108,0)}100%{box-shadow:0 0 0 0 rgba(29,158,108,0)}}
+.tabs{border-radius:16px;padding:6px;display:flex;gap:4px;align-items:center}
+.tabs button{border:none;background:transparent;color:var(--ink2);font-weight:700;font-size:13.5px;padding:9px 16px;border-radius:11px}
+.tabs button.on{background:var(--teal);color:#fff;box-shadow:0 4px 12px rgba(14,122,109,.35)}
+.userbox{border-radius:16px;padding:8px 12px;display:flex;align-items:center;gap:9px;margin-left:auto}
+.userbox .who{font-size:12.5px;font-weight:700;line-height:1.25}
+.userbox .who small{display:block;color:var(--ink2);font-weight:600;font-size:11px}
+.btn{border:1px solid var(--glass-brd);background:var(--glass2);color:var(--ink);font-weight:700;font-size:12.5px;padding:8px 13px;border-radius:11px;backdrop-filter:blur(10px)}
+.btn:hover{filter:brightness(1.05)}
+.btn.primary{background:var(--teal);border-color:transparent;color:#fff}
+.btn.amber{background:var(--amber);border-color:transparent;color:#fff}
+.btn.danger{background:var(--red);border-color:transparent;color:#fff}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+/* ---------- LEFT PANEL ---------- */
+.panel{position:fixed;z-index:800;border-radius:20px;display:flex;flex-direction:column;overflow:hidden}
+#panelTracker{left:12px;top:86px;bottom:12px;width:372px;max-width:calc(100vw - 24px)}
+.panel-h{padding:14px 16px 10px;border-bottom:1px solid var(--line)}
+.panel-h h2{margin:0;font-size:15px;font-weight:800}
+.panel-h p{margin:3px 0 0;font-size:12px;color:var(--ink2);font-weight:500}
+.panel-b{overflow-y:auto;padding:12px 14px 16px;scrollbar-width:thin}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.chip{border:1px solid var(--line);background:var(--chip);color:var(--ink);font-size:12px;font-weight:700;padding:7px 12px;border-radius:999px;backdrop-filter:blur(8px)}
+.chip.on{background:var(--ink);color:var(--paper);border-color:transparent}
+.chip .sw{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:1px}
+.bus-card{border:1px solid var(--line);background:var(--glass2);border-radius:16px;padding:13px 14px;margin-bottom:10px;backdrop-filter:blur(10px)}
+.bus-card.sel{outline:2px solid var(--teal);outline-offset:-1px}
+.bc-top{display:flex;align-items:center;gap:9px}
+.bc-badge{width:36px;height:36px;border-radius:11px;color:#fff;font:700 12px var(--mono);display:flex;align-items:center;justify-content:center;flex:none}
+.bc-name{font-weight:800;font-size:14px;line-height:1.2}
+.bc-sub{font-size:11.5px;color:var(--ink2);font-weight:600}
+.bc-eta{margin-left:auto;text-align:right}
+.bc-eta .big{font:600 19px var(--mono);color:var(--teal-d)}
+.bc-eta .lbl{font-size:10px;font-weight:700;color:var(--ink2);letter-spacing:.04em}
+.bc-meta{display:flex;gap:12px;flex-wrap:wrap;margin-top:9px;font-size:11.5px;color:var(--ink2);font-weight:600}
+.bc-meta b{color:var(--ink)}
+.crowd{display:inline-flex;align-items:center;gap:5px}
+.crowd i{width:7px;height:7px;border-radius:50%;background:var(--line);display:inline-block}
+.crowd i.f1{background:var(--green)} .crowd i.f2{background:var(--amber)} .crowd i.f3{background:var(--red)}
+.bc-actions{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
+.bc-actions button{flex:1;border:1px solid var(--line);background:var(--chip);border-radius:9px;font-size:11.5px;font-weight:700;padding:7px 4px;color:var(--ink)}
+.bc-actions button:hover{border-color:var(--teal);color:var(--teal-d)}
+.bc-actions button.on{background:var(--teal);color:#fff;border-color:transparent}
+.progress{height:6px;border-radius:99px;background:var(--line);margin-top:11px;overflow:hidden}
+.progress i{display:block;height:100%;border-radius:99px;transition:width .8s linear}
+.sec-t{font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--ink2);margin:16px 2px 8px}
+.stop-row{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:12px;border:1px solid transparent}
+.stop-row:hover{background:var(--chip);border-color:var(--line)}
+.stop-row .n{width:24px;height:24px;border-radius:50%;background:var(--glass2);border:1.5px solid var(--teal);color:var(--teal-d);font:600 11px var(--mono);display:flex;align-items:center;justify-content:center;flex:none}
+.stop-row .nm{font-weight:700;font-size:13px;line-height:1.25}
+.stop-row .ar{font-size:11px;color:var(--ink2);font-weight:600}
+.stop-row .eta{margin-left:auto;font:600 12.5px var(--mono);color:var(--teal-d);white-space:nowrap}
+.stop-row.next{background:var(--chip);border-color:var(--teal)}
+/* alert box */
+.alert-box{border:1px dashed var(--teal);border-radius:16px;padding:13px 14px;background:var(--chip)}
+.alert-box h3{margin:0 0 4px;font-size:13.5px;font-weight:800}
+.alert-box p{margin:0 0 10px;font-size:12px;color:var(--ink2);font-weight:500;line-height:1.45}
+.field{width:100%;padding:9px 11px;border-radius:10px;border:1px solid var(--line);background:var(--glass2);color:var(--ink);font-size:13px;font-weight:600;margin-bottom:8px}
+.seg{display:flex;gap:5px;margin-bottom:10px}
+.seg button{flex:1;padding:8px 0;border-radius:9px;border:1px solid var(--line);background:var(--glass2);font-weight:700;font-size:12.5px;color:var(--ink2)}
+.seg button.on{background:var(--amber);color:#fff;border-color:transparent}
+.alert-active{display:none;border-radius:12px;background:var(--teal);color:#fff;padding:10px 12px;font-size:12.5px;font-weight:700;line-height:1.45}
+.alert-active.show{display:block}
+/* ---------- RIGHT MINI PANEL ---------- */
+#panelSide{right:12px;top:86px;width:308px;max-width:calc(100vw - 24px);max-height:calc(100vh - 190px)}
+.stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.stat{border:1px solid var(--line);background:var(--glass2);border-radius:13px;padding:10px 12px}
+.stat .v{font:600 20px var(--mono);color:var(--teal-d)}
+.stat .k{font-size:10.5px;font-weight:700;color:var(--ink2);letter-spacing:.03em;margin-top:1px}
+/* ---------- BOTTOM BAR ---------- */
+.bottombar{position:fixed;left:50%;transform:translateX(-50%);bottom:12px;z-index:850;border-radius:16px;padding:8px;display:flex;gap:6px;max-width:calc(100vw - 24px);overflow-x:auto;scrollbar-width:none}
+.bottombar::-webkit-scrollbar{display:none}
+.bottombar button{white-space:nowrap;border:none;background:transparent;color:var(--ink);font-weight:700;font-size:12.5px;padding:9px 13px;border-radius:11px}
+.bottombar button:hover{background:var(--chip)}
+/* ---------- VIEWS ---------- */
+.view{display:none}
+.view.on{display:flex}
+/* driver + admin panels reuse .panel positioning */
+#panelDriver,#panelAdmin{left:12px;top:86px;bottom:12px;width:520px;max-width:calc(100vw - 24px)}
+.kv{display:flex;justify-content:space-between;gap:10px;padding:8px 2px;border-bottom:1px solid var(--line);font-size:13px}
+.kv b{font-family:var(--mono);font-weight:600}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th{text-align:left;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink2);padding:7px 8px;border-bottom:1px solid var(--line)}
+td{padding:7px 8px;border-bottom:1px solid var(--line);font-weight:600}
+td.mono,th.mono{font-family:var(--mono)}
+.badge{display:inline-block;padding:2px 8px;border-radius:99px;font-size:10.5px;font-weight:800;color:#fff}
+.badge.ok{background:var(--green)} .badge.late{background:var(--red)} .badge.soon{background:var(--amber)}
+/* ---------- TOAST ---------- */
+#toasts{position:fixed;top:86px;right:12px;z-index:1200;display:flex;flex-direction:column;gap:8px;width:320px;max-width:calc(100vw - 24px)}
+.toast{border-radius:14px;padding:12px 14px;font-size:13px;font-weight:700;line-height:1.45;animation:tin .25s ease}
+.toast small{display:block;font-weight:600;opacity:.85;margin-top:2px}
+@keyframes tin{from{transform:translateY(-6px);opacity:0}to{transform:none;opacity:1}}
+/* ---------- MODAL ---------- */
+.modal-wrap{position:fixed;inset:0;z-index:1500;display:none;align-items:center;justify-content:center;padding:18px;background:rgba(8,20,17,.35);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.modal-wrap.show{display:flex}
+.modal{border-radius:20px;width:400px;max-width:100%;padding:22px}
+.modal h2{margin:0 0 4px;font-size:19px;font-weight:800}
+.modal p{margin:0 0 14px;font-size:13px;color:var(--ink2);font-weight:500;line-height:1.5}
+.modal label{font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--ink2);display:block;margin:10px 0 5px}
+/* ---------- MOBILE ---------- */
+#sheetToggle{display:none}
+@media (max-width:900px){
+  #panelSide{display:none}
+  .brand p{display:none}
+  .live-clock{display:none}
+}
+@media (max-width:640px){
+  .topbar{top:8px;left:8px;right:8px}
+  .brand{padding:8px 12px}.brand h1{font-size:15px}
+  .tabs{order:3;width:100%;justify-content:space-between}
+  .tabs button{flex:1;padding:9px 4px}
+  .userbox{margin-left:0}
+  #panelTracker,#panelDriver,#panelAdmin{left:8px;right:8px;top:auto;bottom:118px;width:auto;max-height:48vh}
+  #toasts{top:auto;bottom:calc(48vh + 130px);right:8px}
+  .map-fallback{align-items:flex-start;padding:172px 12px 0}
+  .map-fallback>div{max-width:100%!important;padding:12px 14px!important}
+  .map-fallback p{margin:6px 0 10px!important;font-size:12.5px!important;line-height:1.45!important}
+  .bottombar{bottom:8px;left:8px;right:8px;transform:none;justify-content:center;flex-wrap:wrap;overflow-x:visible}
+  .bottombar button{padding:8px 10px;font-size:12px}
+}
+@media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+
+<div id="map" aria-label="Live map of Gorakhpur with bus routes"></div>
+<div class="map-fallback" id="mapFallback"><div class="glass" style="border-radius:18px;padding:22px;max-width:420px"><strong style="font-size:16px">Map tiles are taking a while</strong><p style="margin:8px 0 14px;font-size:13px;line-height:1.55">The live buses, stops and ETAs in the panel are still updating. You can retry the street map any time.</p><button class="btn primary" id="reloadMapBtn" type="button">Reload the map</button></div></div>
+
+<!-- TOP BAR -->
+<header class="topbar">
+  <div class="brand glass">
+    <div class="mark" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><rect x="4" y="3" width="16" height="14" rx="3"/><path d="M4 10h16M8 21l1.5-4M16 21l-1.5-4"/><circle cx="8.5" cy="13.5" r=".6" fill="#fff"/><circle cx="15.5" cy="13.5" r=".6" fill="#fff"/></svg></div>
+    <div>
+      <h1>Gorakhpur Bus Tracker</h1>
+      <p><span class="dot-live"></span>Live · 6 buses · 3 routes · 13 stops</p>
+    </div>
+    <div class="live-clock"><div class="t" id="clock">--:--:--</div><div class="d" id="clockDate">—</div></div>
+  </div>
+  <nav class="tabs glass" aria-label="Views">
+    <button type="button" data-view="tracker" class="on">Tracker</button>
+    <button type="button" data-view="driver">Driver</button>
+    <button type="button" data-view="admin">Admin</button>
+  </nav>
+  <div class="userbox glass">
+    <div class="who" id="whoBox">Guest<small>Sign in for alerts</small></div>
+    <button class="btn primary" id="loginBtn" type="button">Sign in</button>
+    <button class="btn" id="logoutBtn" type="button" style="display:none">Sign out</button>
+  </div>
+</header>
+
+<!-- TRACKER PANEL -->
+<section class="panel glass view on" id="panelTracker" aria-label="Live buses">
+  <div class="panel-h">
+    <h2>Buses near you, live</h2>
+    <p id="trafficNote">ETA uses a time-of-day traffic model (Model V2). Switch to V1 below to compare.</p>
+  </div>
+  <div class="panel-b">
+    <div class="chips" id="routeChips" role="group" aria-label="Filter by route"></div>
+    <div style="display:flex;gap:6px;margin-bottom:6px">
+      <button class="btn" id="etaModelBtn" type="button" style="flex:1">ETA model: V2 · Traffic-aware</button>
+      <button class="btn" id="nearestBtn" type="button" style="flex:1">◎ Nearest stop</button>
+    </div>
+    <div id="nearestOut" style="font-size:12.5px;font-weight:600;color:var(--ink2);padding:2px 2px 6px"></div>
+    <div id="busList"></div>
+
+    <div class="sec-t">Stops on selected route</div>
+    <div id="stopList"></div>
+
+    <div class="sec-t">Arrival alert</div>
+    <div class="alert-box">
+      <h3>Notify me before my bus arrives</h3>
+      <p>Pick your stop and how early you want the heads-up. The alert fires on this page the moment any bus heading there crosses your threshold.</p>
+      <label class="sec-t" style="margin:0 0 5px" for="alertStop">Your stop</label>
+      <select class="field" id="alertStop"></select>
+      <div class="seg" id="alertSeg" role="group" aria-label="Alert minutes">
+        <button type="button" data-min="3">3 min</button>
+        <button type="button" data-min="5" class="on">5 min</button>
+        <button type="button" data-min="10">10 min</button>
+      </div>
+      <button class="btn amber" id="setAlertBtn" type="button" style="width:100%">Set arrival alert</button>
+      <div class="alert-active" id="alertActive" style="margin-top:9px"></div>
+    </div>
+  </div>
+</section>
+
+<!-- SIDE PANEL : TODAY -->
+<aside class="panel glass" id="panelSide" aria-label="Today at a glance">
+  <div class="panel-h"><h2>Today at a glance</h2><p>Updates every second from the live fleet.</p></div>
+  <div class="panel-b">
+    <div class="stat-grid">
+      <div class="stat"><div class="v" id="stOnTime">—</div><div class="k">ON-TIME %</div></div>
+      <div class="stat"><div class="v" id="stTrips">0</div><div class="k">ARRIVALS LOGGED</div></div>
+      <div class="stat"><div class="v" id="stAvgDelay">—</div><div class="k">AVG DELAY</div></div>
+      <div class="stat"><div class="v" id="stFactor">—</div><div class="k">TRAFFIC FACTOR</div></div>
+    </div>
+    <div class="sec-t">Next arrivals — all stops</div>
+    <div id="nextArrivals"></div>
+  </div>
+</aside>
+
+<!-- DRIVER PANEL -->
+<section class="panel glass view" id="panelDriver" aria-label="Driver mode">
+  <div class="panel-h"><h2>Driver mode</h2><p>Your phone becomes the GPS tracker — no extra hardware. Location is shared only while sharing is on, and only inside this page.</p></div>
+  <div class="panel-b">
+    <div class="kv"><span>Driver</span><b id="drvName">Not signed in as driver</b></div>
+    <div class="kv"><span>Assigned bus</span><b id="drvBus">—</b></div>
+    <div class="kv"><span>GPS status</span><b id="gpsStatus">Off</b></div>
+    <div class="kv"><span>Last fix</span><b id="gpsFix">—</b></div>
+    <div class="kv"><span>Updates sent</span><b id="gpsCount">0</b></div>
+    <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
+      <button class="btn primary" id="gpsStartBtn" type="button" style="flex:1">Start sharing my GPS</button>
+      <button class="btn danger" id="gpsStopBtn" type="button" style="flex:1" disabled>Stop sharing</button>
+    </div>
+    <button class="btn" id="demoDriveBtn" type="button" style="width:100%;margin-top:8px">No GPS handy? Run a demo drive on Route R1</button>
+    <p style="font-size:12px;color:var(--ink2);line-height:1.55;font-weight:500">While sharing, a “YOU” marker follows your real position on the map and nearby-stop ETAs are computed from it. On desktop without GPS, use the demo drive — it moves a virtual bus along the Campus Express route exactly like the live fleet.</p>
+    <div class="sec-t">How the real system works</div>
+    <p style="font-size:12.5px;color:var(--ink2);line-height:1.6;font-weight:500;margin:0">In production this page posts <span style="font-family:var(--mono)">lat / lng</span> every 5 seconds to the server, which pushes it over WebSockets to every student screen. This demo runs the same loop in your browser so every control works end-to-end.</p>
+  </div>
+</section>
+
+<!-- ADMIN PANEL -->
+<section class="panel glass view" id="panelAdmin" aria-label="Admin dashboard">
+  <div class="panel-h"><h2>Admin dashboard</h2><p>Fleet health, on-time performance and today’s arrival log.</p></div>
+  <div class="panel-b">
+    <div class="stat-grid" style="grid-template-columns:1fr 1fr 1fr">
+      <div class="stat"><div class="v" id="adOnTime">—</div><div class="k">ON-TIME %</div></div>
+      <div class="stat"><div class="v" id="adTrips">0</div><div class="k">ARRIVALS</div></div>
+      <div class="stat"><div class="v" id="adFleet">6 / 6</div><div class="k">BUSES LIVE</div></div>
+    </div>
+    <div class="sec-t">Arrivals per hour (today)</div>
+    <div id="hourChart"></div>
+    <div class="sec-t">Fleet status</div>
+    <div id="fleetTable"></div>
+    <div class="sec-t">Recent arrivals log</div>
+    <div style="overflow-x:auto"><table><thead><tr><th>Bus</th><th>Stop</th><th class="mono">Time</th><th>Status</th></tr></thead><tbody id="tripLogBody"><tr><td colspan="4" style="color:var(--ink2)">Arrivals will appear here as buses reach stops…</td></tr></tbody></table></div>
+    <button class="btn" id="exportBtn" type="button" style="margin-top:12px;width:100%">Download today’s log (CSV)</button>
+  </div>
+</section>
+
+<!-- BOTTOM BAR -->
+<nav class="bottombar glass" aria-label="Quick actions">
+  <button type="button" id="fitBtn">Fit all routes</button>
+  <button type="button" id="followBtn">Follow selected bus</button>
+  <button type="button" id="pauseBtn">Pause live</button>
+  <button type="button" id="speedBtn">Speed: 1×</button>
+  <button type="button" id="themeMapBtn">Map: Colour</button>
+</nav>
+
+<div id="toasts" aria-live="polite"></div>
+
+<!-- LOGIN MODAL -->
+<div class="modal-wrap" id="loginModal">
+  <div class="modal glass" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
+    <h2 id="loginTitle">Sign in</h2>
+    <p>Students set arrival alerts; drivers get a bus assignment for GPS mode. This demo sign-in stays in this tab only.</p>
+    <label for="loginName">Your name</label>
+    <input class="field" id="loginName" type="text" placeholder="e.g. Chandu" autocomplete="name" />
+    <label for="loginRole">I am a</label>
+    <select class="field" id="loginRole"><option value="student">Student</option><option value="driver">Driver</option><option value="admin">Admin</option></select>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <button class="btn primary" id="doLoginBtn" type="button" style="flex:1">Sign in</button>
+      <button class="btn" id="cancelLoginBtn" type="button" style="flex:1">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+/* ================= DATA — real Gorakhpur stops ================= */
+var STOPS = [
+  {id:'jn',  name:'Gorakhpur Junction', area:'Railway Station Rd', lat:26.75930, lng:83.38020, major:true},
+  {id:'gol', name:'Golghar', area:'City Centre', lat:26.76480, lng:83.36850, major:true},
+  {id:'univ',name:'DDU Gorakhpur University', area:'Civil Lines', lat:26.76760, lng:83.40470, major:true},
+  {id:'mmut',name:'MMMUT', area:'Deoria Rd', lat:26.73200, lng:83.42800, major:true},
+  {id:'brd', name:'BRD Medical College', area:'Asuran', lat:26.80120, lng:83.42100, major:true},
+  {id:'gnt', name:'Gorakhnath Temple', area:'Gorakhnath', lat:26.79550, lng:83.36800},
+  {id:'asuran',name:'Asuran Chowk', area:'Medical Rd', lat:26.78500, lng:83.39600},
+  {id:'rust',name:'Rustampur', area:'University Rd', lat:26.75800, lng:83.41500},
+  {id:'paid',name:'Paidleganj', area:'Gorakhnath Rd', lat:26.78300, lng:83.35200},
+  {id:'naus',name:'Nausad', area:'NH-28', lat:26.72600, lng:83.35500},
+  {id:'air', name:'Gorakhpur Airport (Mahayogi Gorakhnath Airport)', area:'Airport Rd', lat:26.73920, lng:83.44950, major:true},
+  {id:'kush',name:'Kushmi Bazar', area:'Airport Rd', lat:26.73400, lng:83.43800},
+  {id:'sah', name:'Sahjanwa', area:'NH-28 East', lat:26.77700, lng:83.47800}
+];
+var STOP = {}; STOPS.forEach(function(s){ STOP[s.id]=s; });
+var ROUTES = [
+  {id:'R1', name:'Campus Express', color:'#0e7a6d', stops:['jn','gol','univ','rust','mmut']},
+  {id:'R2', name:'Medical Line', color:'#c25e10', stops:['gol','paid','gnt','asuran','brd']},
+  {id:'R3', name:'Airport – Nausad Link', color:'#2f5fb3', stops:['naus','jn','univ','kush','air','sah']}
+];
+var ROUTE = {}; ROUTES.forEach(function(r){ ROUTE[r.id]=r; });
+
+/* ================= GEOMETRY HELPERS ================= */
+function hav(a,b){ var R=6371000, dLa=(b.lat-a.lat)*Math.PI/180, dLo=(b.lng-a.lng)*Math.PI/180;
+  var x=Math.sin(dLa/2)*Math.sin(dLa/2)+Math.cos(a.lat*Math.PI/180)*Math.cos(b.lat*Math.PI/180)*Math.sin(dLo/2)*Math.sin(dLo/2);
+  return 2*R*Math.asin(Math.sqrt(x)); }
+function buildPath(stopIds){ var pts=stopIds.map(function(id){return STOP[id];}), cum=[0], total=0;
+  for(var i=1;i<pts.length;i++){ total+=hav(pts[i-1],pts[i]); cum.push(total); } return {pts:pts,cum:cum,total:total}; }
+ROUTES.forEach(function(r){ r.path=buildPath(r.stops); });
+function posAt(route, dist){ var p=route.path; dist=Math.max(0,Math.min(p.total,dist));
+  for(var i=1;i<p.cum.length;i++){ if(dist<=p.cum[i]){ var seg=p.cum[i]-p.cum[i-1], f=seg? (dist-p.cum[i-1])/seg:0;
+    return {lat:p.pts[i-1].lat+(p.pts[i].lat-p.pts[i-1].lat)*f, lng:p.pts[i-1].lng+(p.pts[i].lng-p.pts[i-1].lng)*f}; } }
+  var last=p.pts[p.pts.length-1]; return {lat:last.lat,lng:last.lng}; }
+function nextStopIndex(route, dist){ var c=route.path.cum; for(var i=0;i<c.length;i++){ if(dist < c[i]-20) return i; } return c.length-1; }
+
+/* traffic factor by hour: 1 = free flow, lower = slower */
+function trafficFactor(d){ var h=(d||new Date()).getHours();
+  if(h>=8&&h<10) return 0.55; if(h>=10&&h<12) return 0.8; if(h>=12&&h<14) return 0.9;
+  if(h>=14&&h<17) return 0.85; if(h>=17&&h<20) return 0.5; if(h>=20&&h<23) return 0.9; return 1; }
+var BASE_SPEED = 7.2; /* m/s ≈ 26 km/h */
+
+/* ================= STATE ================= */
+var state = {
+  user:null, view:'tracker', routeFilter:'ALL', etaModel:2, paused:false, speedMul:1,
+  selectedBus:null, follow:false, alertStop:null, alertMin:5, alert:null, alertFired:{},
+  crowd:{}, trips:[], simMin:0, darkTiles:false
+};
+var buses = [];
+function mkBus(id, routeId, frac, dir){ var r=ROUTE[routeId];
+  return {id:id, routeId:routeId, dist:r.path.total*frac, dir:dir, dwell:0, speed:BASE_SPEED*(0.85+Math.random()*0.3), crowd:'Low', lastStopIdx:-1}; }
+buses = [ mkBus('UP53-101','R1',0.08,1), mkBus('UP53-102','R1',0.62,-1), mkBus('UP53-201','R2',0.3,1),
+          mkBus('UP53-202','R2',0.8,-1), mkBus('UP53-301','R3',0.15,1), mkBus('UP53-302','R3',0.7,-1) ];
+state.selectedBus = buses[0].id;
+function busById(id){ for(var i=0;i<buses.length;i++) if(buses[i].id===id) return buses[i]; return null; }
+
+/* ETA: minutes for bus to reach stopIdx on its route. V1 = distance/avg speed. V2 = / traffic factor + dwell allowance */
+function etaTo(bus, stopIdx){
+  var r=ROUTE[bus.routeId], target=r.path.cum[stopIdx], d;
+  if(bus.dir===1){ d = target - bus.dist; if(d < -30) return null; }
+  else { d = bus.dist - target; if(d < -30) return null; }
+  if(d < 0) d = 0;
+  var eff = state.etaModel===2 ? bus.speed*trafficFactor() : bus.speed;
+  var mins = d/eff/60;
+  if(state.etaModel===2){ var stopsBetween=Math.abs(stopIdx-nextStopIndex(r,bus.dist)); mins += stopsBetween*0.4; }
+  return mins;
+}
+function fmtEta(m){ if(m===null||m===undefined) return '—'; if(m<1) return 'Arriving'; return Math.round(m)+' min'; }
+
+/* ================= MAP ================= */
+var map=null, routeLayers={}, busMarkers={}, stopMarkers={}, driverMarker=null, tileLayer=null;
+/* Street-tile providers, in preference order. Two popular sources are deliberately
+   NOT used, both verified broken for key-less embedding: tile.openstreetmap.org
+   answers embedded app pages with HTTP 403 "Access blocked" notice tiles, and
+   basemaps.cartocdn.com now answers with an "API KEY REQUIRED" placeholder image.
+   The providers below are published for key-less embedding in web maps and were
+   each checked to return real Gorakhpur street tiles. */
+var TILE_PROVIDERS=[
+  { name:'Esri World Street Map',
+    url:'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
+    opts:{maxZoom:19,attribution:'Tiles © Esri — Esri, DeLorme, NAVTEQ, TomTom, OpenStreetMap contributors'} },
+  { name:'Esri World Topo Map',
+    url:'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
+    opts:{maxZoom:19,attribution:'Tiles © Esri — Esri, DeLorme, NAVTEQ, TomTom, OpenStreetMap contributors'} },
+  { name:'OpenTopoMap',
+    url:'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+    opts:{subdomains:'abc',maxZoom:17,attribution:'© OpenStreetMap contributors, SRTM · style: OpenTopoMap (CC-BY-SA)'} }
+];
+var tileProviderIdx=0, tileErrCount=0, tileOkCount=0;
+function tileProbeUrl(p){
+  return p.url.replace('{s}','a').replace('{z}','12').replace('{x}','2996').replace('{y}','1731').replace('{r}','');
+}
+/* A blocked provider can still return a paintable image (a 403 notice, or a 200 with
+   an "API key required" placeholder), which fools <img>-based loading — so health is
+   checked with fetch(): the status must be OK and the body must be a real tile.
+   The probe coordinate is Gorakhpur city centre, where genuine tiles are 18 KB+. */
+function probeProvider(i){
+  if(i>=TILE_PROVIDERS.length) return Promise.resolve(-1);
+  var ctrl=('AbortController' in window)? new AbortController():null;
+  var to=ctrl? setTimeout(function(){ ctrl.abort(); },4500):null;
+  var clear=function(){ if(to) clearTimeout(to); };
+  return fetch(tileProbeUrl(TILE_PROVIDERS[i]),{signal:ctrl?ctrl.signal:undefined,cache:'no-store'})
+    .then(function(r){ if(!r.ok) throw new Error('http '+r.status); return r.blob(); })
+    .then(function(b){ clear(); if(b && b.size>6000) return i; throw new Error('placeholder tile'); })
+    .catch(function(){ clear(); return probeProvider(i+1); });
+}
+function setTileProvider(i){
+  var p=TILE_PROVIDERS[i]; if(!p||!map) return;
+  tileProviderIdx=i; tileErrCount=0;
+  if(tileLayer) map.removeLayer(tileLayer);
+  tileLayer=L.tileLayer(p.url,p.opts).addTo(map);
+  tileLayer.on('tileerror',function(){ tileErrCount++;
+    if(tileErrCount>=4 && tileOkCount<3){
+      if(tileProviderIdx+1<TILE_PROVIDERS.length) setTileProvider(tileProviderIdx+1);
+      else document.getElementById('mapFallback').classList.add('show');
+    } });
+  tileLayer.on('tileload',function(){ tileOkCount++; document.getElementById('mapFallback').classList.remove('show'); });
+}
+function initMap(){
+  if(typeof L==='undefined'){ document.getElementById('mapFallback').classList.add('show'); return; }
+  map = L.map('map',{zoomControl:false}).setView([26.765,83.395],12.4);
+  L.control.zoom({position:'bottomright'}).addTo(map);
+  document.getElementById('map').classList.toggle('tiles-dark',!!state.darkTiles);
+  /* Start on the first provider immediately, then verify with fetch probes: if the
+     starting provider is actually blocked (403 notice tiles), jump to the first
+     provider whose probe returns a real street tile. */
+  setTileProvider(0);
+  probeProvider(0).then(function(i){ if(i>0) setTileProvider(i); });
+  ROUTES.forEach(function(r){
+    var latlngs=r.path.pts.map(function(p){return [p.lat,p.lng];});
+    routeLayers[r.id]=L.polyline(latlngs,{color:r.color,weight:5,opacity:.55,lineCap:'round'}).addTo(map);
+  });
+  STOPS.forEach(function(s){
+    var icon=L.divIcon({className:'stop-pin',html:'<div class="stop-dot'+(s.major?' major':'')+'"></div>',iconSize:[20,20],iconAnchor:[10,10]});
+    var m=L.marker([s.lat,s.lng],{icon:icon}).addTo(map);
+    m.bindPopup('<div class="popup-t">'+s.name+'</div>'+s.area+' · Gorakhpur<br><span id="pop-'+s.id+'">Loading next bus…</span>');
+    m.on('click',function(){ setTimeout(function(){ updatePopup(s.id); },50); });
+    stopMarkers[s.id]=m;
+  });
+  buses.forEach(function(b){
+    var r=ROUTE[b.routeId], pos=posAt(r,b.dist);
+    var icon=L.divIcon({className:'bus-pin',html:'<div class="bus-dot" style="background:'+r.color+'cc">'+b.id.slice(5)+'</div>',iconSize:[34,34],iconAnchor:[17,17]});
+    var m=L.marker([pos.lat,pos.lng],{icon:icon,zIndexOffset:500}).addTo(map);
+    m.bindPopup('<div class="popup-t">Bus '+b.id+'</div>'+r.name+'<br><span id="popbus-'+b.id+'"></span>');
+    m.on('click',function(){ selectBus(b.id,false); setTimeout(function(){ updateBusPopup(b); },50); });
+    busMarkers[b.id]=m;
+  });
+}
+function updatePopup(stopId){
+  var el=document.getElementById('pop-'+stopId); if(!el) return;
+  var best=null;
+  buses.forEach(function(b){ var idx=ROUTE[b.routeId].stops.indexOf(stopId); if(idx<0) return;
+    var e=etaTo(b,idx); if(e!==null && (best===null||e<best.e)) best={e:e,b:b}; });
+  el.textContent = best ? ('Next: Bus '+best.b.id+' · '+fmtEta(best.e)) : 'No bus heading here right now';
+}
+function updateBusPopup(b){
+  var el=document.getElementById('popbus-'+b.id); if(!el) return;
+  var r=ROUTE[b.routeId], ni=nextStopIndex(r,b.dist);
+  var e=etaTo(b,ni);
+  el.textContent='Next stop: '+STOP[r.stops[ni]].name+' · '+(e===null?'—':fmtEta(e))+' · Crowd: '+b.crowd;
+}
+function applyRouteVisibility(){
+  ROUTES.forEach(function(r){ if(!routeLayers[r.id]) return;
+    var show = state.routeFilter==='ALL'||state.routeFilter===r.id;
+    if(show && !map.hasLayer(routeLayers[r.id])) routeLayers[r.id].addTo(map);
+    if(!show && map.hasLayer(routeLayers[r.id])) map.removeLayer(routeLayers[r.id]); });
+  buses.forEach(function(b){ var m=busMarkers[b.id]; if(!m) return;
+    var show = state.routeFilter==='ALL'||state.routeFilter===b.routeId;
+    if(show && !map.hasLayer(m)) m.addTo(map);
+    if(!show && map.hasLayer(m)) map.removeLayer(m); });
+}
+
+/* ================= SIMULATION ================= */
+function step(dt){
+  if(state.paused) return;
+  var f=trafficFactor();
+  buses.forEach(function(b){
+    var r=ROUTE[b.routeId];
+    if(b.dwell>0){ b.dwell-=dt; return; }
+    b.dist += b.dir * b.speed * f * dt * state.speedMul;
+    var ni=nextStopIndex(r,b.dist);
+    /* arrival at a stop */
+    var target=r.path.cum[ni];
+    if(Math.abs(b.dist-target)<28 && b.lastStopIdx!==ni){
+      b.lastStopIdx=ni; b.dwell=6+Math.random()*5;
+      logTrip(b, r.stops[ni]);
+      if(b.dir===1 && ni===r.stops.length-1){ b.dir=-1; b.lastStopIdx=-1; }
+      if(b.dir===-1 && ni===0){ b.dir=1; b.lastStopIdx=-1; }
+    }
+    if(b.dist>=r.path.total){ b.dist=r.path.total; b.dir=-1; }
+    if(b.dist<=0){ b.dist=0; b.dir=1; }
+  });
+  state.simMin += dt/60;
+  checkAlerts();
+}
+function logTrip(bus, stopId){
+  var now=new Date();
+  var delaySec=Math.round((Math.random()*240-60)); /* -1 min early .. +4 min late */
+  var t={bus:bus.id, stop:STOP[stopId].name, time:now, delay:delaySec, hour:now.getHours()};
+  state.trips.unshift(t); if(state.trips.length>60) state.trips.pop();
+}
+function onTimePct(){ if(!state.trips.length) return null;
+  var ok=state.trips.filter(function(t){return t.delay<=120;}).length; return Math.round(ok/state.trips.length*100); }
+function avgDelay(){ if(!state.trips.length) return null;
+  return state.trips.reduce(function(a,t){return a+t.delay;},0)/state.trips.length; }
+
+/* ================= ALERTS ================= */
+function checkAlerts(){
+  if(!state.alert) return;
+  buses.forEach(function(b){
+    var idx=ROUTE[b.routeId].stops.indexOf(state.alert.stopId); if(idx<0) return;
+    var e=etaTo(b,idx); if(e===null) return;
+    var key=b.id+'@'+state.alert.stopId;
+    if(e<=state.alert.min && !state.alertFired[key]){
+      state.alertFired[key]=true;
+      toast('Bus '+b.id+' is '+Math.max(1,Math.round(e))+' min away','Heading to '+STOP[state.alert.stopId].name+' · '+ROUTE[b.routeId].name+'. Time to head to the stop!');
+      var box=document.getElementById('alertActive');
+      box.innerHTML='Alert fired — Bus '+b.id+' reaches '+STOP[state.alert.stopId].name+' in about '+Math.max(1,Math.round(e))+' min.';
+    }
+    if(e>state.alert.min+3) delete state.alertFired[key];
+  });
+}
+
+/* ================= UI RENDER ================= */
+function toast(title, sub){
+  /* while the map-fallback card is up, keep toasts out of its space (they overlap it on small screens) */
+  if(document.getElementById('mapFallback').classList.contains('show')) return;
+  var wrap=document.getElementById('toasts');
+  var d=document.createElement('div'); d.className='toast glass';
+  d.style.borderLeft='4px solid var(--amber)';
+  d.innerHTML=title+(sub?'<small>'+sub+'</small>':'');
+  wrap.appendChild(d);
+  setTimeout(function(){ d.style.opacity='0'; d.style.transition='opacity .4s'; setTimeout(function(){ d.remove(); },420); },6000);
+}
+function renderChips(){
+  var c=document.getElementById('routeChips'); c.innerHTML='';
+  var all=document.createElement('button'); all.type='button'; all.className='chip'+(state.routeFilter==='ALL'?' on':''); all.textContent='All routes';
+  all.onclick=function(){ state.routeFilter='ALL'; syncRouteUI(); }; c.appendChild(all);
+  ROUTES.forEach(function(r){ var b=document.createElement('button'); b.type='button';
+    b.className='chip'+(state.routeFilter===r.id?' on':'');
+    b.innerHTML='<span class="sw" style="background:'+r.color+'"></span>'+r.id+' · '+r.name;
+    b.onclick=function(){ state.routeFilter=r.id; syncRouteUI(); }; c.appendChild(b); });
+}
+function syncRouteUI(){ renderChips(); renderBuses(); renderStops(); applyRouteVisibility(); }
+function crowdDots(level){ var n= level==='Low'?1: level==='Medium'?2:3;
+  return '<span class="crowd"><i class="'+(n>=1?'f1':'')+'"></i><i class="'+(n>=2?'f2':'')+'"></i><i class="'+(n>=3?'f3':'')+'"></i></span>'; }
+function renderBuses(){
+  var list=document.getElementById('busList'); list.innerHTML='';
+  var shown=buses.filter(function(b){ return state.routeFilter==='ALL'||b.routeId===state.routeFilter; });
+  if(!shown.length){ list.innerHTML='<p style="font-size:13px;color:var(--ink2);font-weight:600">No buses on this filter.</p>'; return; }
+  shown.forEach(function(b){
+    var r=ROUTE[b.routeId], ni=nextStopIndex(r,b.dist), e=etaTo(b,ni);
+    var pct=Math.round(b.dist/r.path.total*100);
+    var card=document.createElement('div'); card.className='bus-card'+(state.selectedBus===b.id?' sel':'');
+    var crowd=state.crowd[b.id]||b.crowd;
+    card.innerHTML=
+      '<div class="bc-top"><div class="bc-badge" style="background:'+r.color+'">'+b.id.slice(5)+'</div>'+
+      '<div><div class="bc-name">Bus '+b.id+'</div><div class="bc-sub">'+r.id+' · '+r.name+(b.dir===1?' · Outbound':' · Inbound')+(b.dwell>0?' · At stop':'')+'</div></div>'+
+      '<div class="bc-eta"><div class="big">'+(e===null?'—':(e<1?'NOW':Math.round(e)+'m'))+'</div><div class="lbl">TO NEXT STOP</div></div></div>'+
+      '<div class="bc-meta"><span>Next: <b>'+STOP[r.stops[ni]].name+'</b></span><span>Speed <b>'+Math.round(b.speed*trafficFactor()*3.6)+' km/h</b></span><span>'+crowdDots(crowd)+' <b>'+crowd+'</b></span></div>'+
+      '<div class="progress"><i style="width:'+pct+'%;background:'+r.color+'"></i></div>'+
+      '<div class="bc-actions"><button type="button" data-act="track">Track</button><button type="button" data-act="Low">Crowd: Low</button><button type="button" data-act="Medium">Medium</button><button type="button" data-act="Full">Full</button></div>';
+    card.querySelector('[data-act="track"]').onclick=function(){ selectBus(b.id,true); };
+    ['Low','Medium','Full'].forEach(function(lv){
+      var btn=card.querySelector('[data-act="'+lv+'"]');
+      if(crowd===lv) btn.classList.add('on');
+      btn.onclick=function(){ state.crowd[b.id]=lv; b.crowd=lv; toast('Thanks — crowd updated','Bus '+b.id+' now reported as “'+lv+'” by '+(state.user?state.user.name:'a rider')+'.'); renderBuses(); };
+    });
+    list.appendChild(card);
+  });
+}
+function renderStops(){
+  var wrap=document.getElementById('stopList'); wrap.innerHTML='';
+  var routes = state.routeFilter==='ALL' ? [ROUTE[state.routeFilter]||ROUTES[0]] : [ROUTE[state.routeFilter]];
+  if(state.routeFilter==='ALL') routes=[ROUTES[0]];
+  var r=routes[0];
+  r.stops.forEach(function(sid,i){
+    var best=null;
+    buses.forEach(function(b){ if(b.routeId!==r.id) return; var e=etaTo(b,i); if(e!==null&&(best===null||e<best)) best=e; });
+    var row=document.createElement('div'); row.className='stop-row';
+    row.innerHTML='<div class="n">'+(i+1)+'</div><div><div class="nm">'+STOP[sid].name+'</div><div class="ar">'+STOP[sid].area+'</div></div><div class="eta">'+fmtEta(best)+'</div>';
+    row.onclick=function(){ if(stopMarkers[sid]&&map){ map.setView([STOP[sid].lat,STOP[sid].lng],14.5); stopMarkers[sid].openPopup(); setTimeout(function(){updatePopup(sid);},60);} };
+    wrap.appendChild(row);
+  });
+}
+function renderSide(){
+  var otp=onTimePct(), ad=avgDelay();
+  document.getElementById('stOnTime').textContent = otp===null?'—':otp+'%';
+  document.getElementById('stTrips').textContent = state.trips.length;
+  document.getElementById('stAvgDelay').textContent = ad===null?'—':(ad<=0? Math.round(-ad)+'m early' : Math.round(ad/60*10)/10+'m late');
+  document.getElementById('stFactor').textContent = Math.round(trafficFactor()*100)+'%';
+  var wrap=document.getElementById('nextArrivals'); wrap.innerHTML='';
+  var rows=[];
+  STOPS.forEach(function(s){ var best=null;
+    buses.forEach(function(b){ var idx=ROUTE[b.routeId].stops.indexOf(s.id); if(idx<0) return; var e=etaTo(b,idx); if(e!==null&&(best===null||e<best.e)) best={e:e,b:b}; });
+    if(best) rows.push({s:s,best:best}); });
+  rows.sort(function(a,b){return a.best.e-b.best.e;});
+  rows.slice(0,5).forEach(function(x){
+    var d=document.createElement('div'); d.className='stop-row';
+    d.innerHTML='<div class="n" style="border-color:'+ROUTE[x.best.b.routeId].color+'">'+x.best.b.id.slice(5)+'</div><div><div class="nm">'+x.s.name+'</div><div class="ar">'+ROUTE[x.best.b.routeId].name+'</div></div><div class="eta">'+fmtEta(x.best.e)+'</div>';
+    wrap.appendChild(d);
+  });
+  if(!rows.length) wrap.innerHTML='<p style="font-size:12.5px;color:var(--ink2);font-weight:600">Computing arrivals…</p>';
+}
+function renderAdmin(){
+  var otp=onTimePct();
+  document.getElementById('adOnTime').textContent = otp===null?'—':otp+'%';
+  document.getElementById('adTrips').textContent = state.trips.length;
+  /* hour chart */
+  var counts={}; for(var h=0;h<24;h++) counts[h]=0;
+  state.trips.forEach(function(t){ counts[t.hour]++; });
+  var max=Math.max(1,Math.max.apply(null,Object.values(counts)));
+  var nowH=new Date().getHours(), bars='';
+  for(var hh=Math.max(0,nowH-7); hh<=nowH; hh++){
+    var pct=Math.round(counts[hh]/max*100);
+    bars+='<div style="flex:1;text-align:center"><div style="height:64px;display:flex;align-items:flex-end"><div style="width:100%;border-radius:6px 6px 3px 3px;background:var(--teal);opacity:.85;height:'+Math.max(4,pct)+'%" title="'+counts[hh]+' arrivals"></div></div><div style="font:600 10px var(--mono);color:var(--ink2);margin-top:4px">'+hh+':00</div><div style="font:600 10.5px var(--mono)">'+counts[hh]+'</div></div>';
+  }
+  document.getElementById('hourChart').innerHTML='<div style="display:flex;gap:6px;align-items:flex-end">'+bars+'</div>'+(state.trips.length?'':'<p style="font-size:12px;color:var(--ink2);font-weight:600;margin:8px 0 0">Bars fill in as buses log arrivals during this session.</p>');
+  /* fleet */
+  var ft='<div style="overflow-x:auto"><table><thead><tr><th>Bus</th><th>Route</th><th>Next stop</th><th>Crowd</th><th>Status</th></tr></thead><tbody>';
+  buses.forEach(function(b){ var r=ROUTE[b.routeId], ni=nextStopIndex(r,b.dist);
+    ft+='<tr><td class="mono">'+b.id+'</td><td>'+r.name+'</td><td>'+STOP[r.stops[ni]].name+'</td><td>'+(state.crowd[b.id]||b.crowd)+'</td><td><span class="badge '+(b.dwell>0?'soon':'ok')+'">'+(b.dwell>0?'AT STOP':'MOVING')+'</span></td></tr>'; });
+  ft+='</tbody></table></div>';
+  document.getElementById('fleetTable').innerHTML=ft;
+  /* log */
+  var body=document.getElementById('tripLogBody');
+  if(state.trips.length){
+    body.innerHTML=state.trips.slice(0,10).map(function(t){
+      var time=t.time.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+      var st = t.delay<=120 ? '<span class="badge ok">ON TIME</span>' : '<span class="badge late">+'+Math.round(t.delay/60)+' MIN</span>';
+      return '<tr><td class="mono">'+t.bus+'</td><td>'+t.stop+'</td><td class="mono">'+time+'</td><td>'+st+'</td></tr>';
+    }).join('');
+  }
+}
+function selectBus(id, pan){
+  state.selectedBus=id; renderBuses();
+  var b=busById(id); if(!b||!map) return;
+  var pos=posAt(ROUTE[b.routeId], b.dist);
+  if(pan) map.setView([pos.lat,pos.lng],14.5);
+  if(busMarkers[id]) busMarkers[id].openPopup();
+  setTimeout(function(){ updateBusPopup(b); },60);
+}
+
+/* ================= DRIVER GPS ================= */
+var watchId=null, gpsCount=0, demoTimer=null;
+function setGpsUI(on){
+  document.getElementById('gpsStartBtn').disabled=on;
+  document.getElementById('gpsStopBtn').disabled=!on;
+  document.getElementById('gpsStatus').textContent = on?'Sharing live':'Off';
+}
+function placeDriverMarker(lat,lng,label){
+  if(!map) return;
+  if(!driverMarker){
+    var icon=L.divIcon({className:'bus-pin',html:'<div class="bus-dot" style="background:#12211f;border-color:#e8930c">YOU</div>',iconSize:[38,38],iconAnchor:[19,19]});
+    driverMarker=L.marker([lat,lng],{icon:icon,zIndexOffset:900}).addTo(map).bindPopup(label||'Driver position');
+  } else driverMarker.setLatLng([lat,lng]);
+}
+function startGps(){
+  if(!navigator.geolocation){ toast('GPS not available on this device','Use the demo drive button instead.'); return; }
+  if(watchId!==null) return;
+  watchId=navigator.geolocation.watchPosition(function(p){
+    gpsCount++;
+    document.getElementById('gpsCount').textContent=gpsCount;
+    document.getElementById('gpsFix').textContent=p.coords.latitude.toFixed(5)+', '+p.coords.longitude.toFixed(5);
+    placeDriverMarker(p.coords.latitude,p.coords.longitude,'You are sharing this position as the bus GPS.');
+    if(gpsCount===1){ map.setView([p.coords.latitude,p.coords.longitude],14.5); toast('GPS sharing started','Your position is now the live tracker marker on the map.'); }
+  }, function(err){
+    toast('Location permission needed','GPS error: '+err.message+'. You can still use the demo drive.');
+    stopGps();
+  }, {enableHighAccuracy:true, maximumAge:3000, timeout:12000});
+  setGpsUI(true);
+}
+function stopGps(){
+  if(watchId!==null){ navigator.geolocation.clearWatch(watchId); watchId=null; }
+  if(demoTimer){ clearInterval(demoTimer); demoTimer=null; document.getElementById('demoDriveBtn').textContent='No GPS handy? Run a demo drive on Route R1'; }
+  setGpsUI(false);
+}
+function demoDrive(){
+  if(demoTimer){ stopGps(); return; }
+  var r=ROUTES[0], d=0;
+  document.getElementById('demoDriveBtn').textContent='Stop demo drive';
+  setGpsUI(true); document.getElementById('gpsStatus').textContent='Demo drive (R1)';
+  demoTimer=setInterval(function(){
+    d+=90; if(d>r.path.total) d=0;
+    var pos=posAt(r,d); gpsCount++;
+    document.getElementById('gpsCount').textContent=gpsCount;
+    document.getElementById('gpsFix').textContent=pos.lat.toFixed(5)+', '+pos.lng.toFixed(5);
+    placeDriverMarker(pos.lat,pos.lng,'Demo drive — Campus Express');
+  },1000);
+  toast('Demo drive started','A virtual driver is moving along the Campus Express route.');
+}
+
+/* ================= AUTH ================= */
+function applyUser(){
+  var who=document.getElementById('whoBox');
+  if(state.user){
+    who.innerHTML=state.user.name+'<small>'+state.user.role.charAt(0).toUpperCase()+state.user.role.slice(1)+(state.user.role==='driver'?' · Bus UP53-101':'')+'</small>';
+    document.getElementById('loginBtn').style.display='none';
+    document.getElementById('logoutBtn').style.display='';
+    document.getElementById('drvName').textContent=state.user.role==='driver'?state.user.name:'Signed in as '+state.user.role;
+    document.getElementById('drvBus').textContent=state.user.role==='driver'?'UP53-101 · Campus Express':'—';
+  } else {
+    who.innerHTML='Guest<small>Sign in for alerts</small>';
+    document.getElementById('loginBtn').style.display='';
+    document.getElementById('logoutBtn').style.display='none';
+    document.getElementById('drvName').textContent='Not signed in as driver';
+    document.getElementById('drvBus').textContent='—';
+  }
+}
+
+/* ================= EVENTS ================= */
+function switchView(v){
+  state.view=v;
+  document.querySelectorAll('.tabs button').forEach(function(b){ b.classList.toggle('on', b.dataset.view===v); });
+  document.getElementById('panelTracker').classList.toggle('on', v==='tracker');
+  document.getElementById('panelDriver').classList.toggle('on', v==='driver');
+  document.getElementById('panelAdmin').classList.toggle('on', v==='admin');
+  document.getElementById('panelSide').style.display = v==='tracker' ? '' : 'none';
+  if(v==='admin') renderAdmin();
+}
+document.querySelectorAll('.tabs button').forEach(function(b){ b.onclick=function(){ switchView(b.dataset.view); }; });
+document.getElementById('etaModelBtn').onclick=function(){
+  state.etaModel = state.etaModel===2?1:2;
+  this.textContent = state.etaModel===2 ? 'ETA model: V2 · Traffic-aware' : 'ETA model: V1 · Distance ÷ speed';
+  document.getElementById('trafficNote').textContent = state.etaModel===2
+    ? 'ETA uses a time-of-day traffic model (Model V2). Switch to V1 below to compare.'
+    : 'ETA = remaining distance ÷ average speed (Model V1). V2 adjusts for rush-hour traffic and stop dwell.';
+  renderBuses(); renderStops(); renderSide();
+  toast('ETA model switched','Now using '+(state.etaModel===2?'V2 — regression-style, time-of-day aware':'V1 — distance ÷ average speed')+'.');
+};
+document.getElementById('nearestBtn').onclick=function(){
+  var out=document.getElementById('nearestOut');
+  function nearest(lat,lng){ var best=null,bd=1e18; STOPS.forEach(function(s){ var d=hav({lat:lat,lng:lng},s); if(d<bd){bd=d;best=s;} }); return {s:best,d:bd}; }
+  if(navigator.geolocation){
+    out.textContent='Finding your location…';
+    navigator.geolocation.getCurrentPosition(function(p){
+      var n=nearest(p.coords.latitude,p.coords.longitude);
+      out.innerHTML='Nearest stop: <b style="color:var(--ink)">'+n.s.name+'</b> · '+(n.d<1000?Math.round(n.d)+' m':(n.d/1000).toFixed(1)+' km')+' away';
+      if(map){ map.setView([n.s.lat,n.s.lng],14.5); stopMarkers[n.s.id].openPopup(); setTimeout(function(){updatePopup(n.s.id);},60); }
+    }, function(){ var n=nearest(26.765,83.385); out.innerHTML='Location unavailable — nearest to city centre: <b style="color:var(--ink)">'+n.s.name+'</b>.'; });
+  }
+};
+document.getElementById('alertSeg').querySelectorAll('button').forEach(function(b){
+  b.onclick=function(){ document.querySelectorAll('#alertSeg button').forEach(function(x){x.classList.remove('on');}); b.classList.add('on');
+    state.alertMin=parseInt(b.dataset.min,10);
+    if(state.alert){ state.alert.min=state.alertMin; document.getElementById('alertActive').innerHTML='Alert updated — watching <b>'+STOP[state.alert.stopId].name+'</b> at '+state.alertMin+' min.'; } };
+});
+document.getElementById('setAlertBtn').onclick=function(){
+  if(!state.user){ document.getElementById('loginModal').classList.add('show'); toast('Sign in first','Arrival alerts need a quick sign-in so we know whose stop to watch.'); return; }
+  var sid=document.getElementById('alertStop').value;
+  state.alert={stopId:sid,min:state.alertMin}; state.alertFired={};
+  var box=document.getElementById('alertActive'); box.classList.add('show');
+  box.innerHTML='Alert on — we’ll flag it here the moment a bus is '+state.alertMin+' min from <b>'+STOP[sid].name+'</b>.';
+  toast('Arrival alert set', STOP[sid].name+' · '+state.alertMin+' minutes before arrival.');
+};
+document.getElementById('loginBtn').onclick=function(){ document.getElementById('loginModal').classList.add('show'); };
+document.getElementById('cancelLoginBtn').onclick=function(){ document.getElementById('loginModal').classList.remove('show'); };
+document.getElementById('doLoginBtn').onclick=function(){
+  var name=document.getElementById('loginName').value.trim()||'Student';
+  var role=document.getElementById('loginRole').value;
+  state.user={name:name,role:role}; applyUser();
+  document.getElementById('loginModal').classList.remove('show');
+  toast('Welcome, '+name,'Signed in as '+role+'. '+(role==='driver'?'Open Driver mode to start GPS sharing.':'You can now set arrival alerts.'));
+  if(role==='driver') switchView('driver');
+};
+document.getElementById('logoutBtn').onclick=function(){ state.user=null; state.alert=null; document.getElementById('alertActive').classList.remove('show'); applyUser(); toast('Signed out','Alerts cleared for this session.'); };
+document.getElementById('gpsStartBtn').onclick=startGps;
+document.getElementById('gpsStopBtn').onclick=function(){ stopGps(); toast('GPS sharing stopped','Your marker stays at the last shared position.'); };
+document.getElementById('demoDriveBtn').onclick=demoDrive;
+document.getElementById('reloadMapBtn').onclick=function(){ location.reload(); };
+document.getElementById('fitBtn').onclick=function(){ if(map){ var all=[]; STOPS.forEach(function(s){all.push([s.lat,s.lng]);}); map.fitBounds(all,{padding:[70,70]}); } };
+document.getElementById('followBtn').onclick=function(){ state.follow=!state.follow; this.textContent=state.follow?'Following: ON':'Follow selected bus'; if(state.follow&&state.selectedBus) selectBus(state.selectedBus,true); };
+document.getElementById('pauseBtn').onclick=function(){ state.paused=!state.paused; this.textContent=state.paused?'Resume live':'Pause live'; };
+document.getElementById('speedBtn').onclick=function(){ state.speedMul = state.speedMul===1?2: state.speedMul===2?4:1; this.textContent='Speed: '+state.speedMul+'×'; };
+document.getElementById('themeMapBtn').onclick=function(){
+  state.darkTiles=!state.darkTiles; this.textContent=state.darkTiles?'Map: Dark':'Map: Colour';
+  var mc=document.getElementById('map'); if(mc) mc.classList.toggle('tiles-dark',state.darkTiles);
+  if(map){ map.invalidateSize(); }
+};
+document.getElementById('exportBtn').onclick=function(){
+  var rows=[['bus','stop','time','delay_seconds']].concat(state.trips.map(function(t){ return [t.bus,'"'+t.stop+'"',t.time.toISOString(),t.delay]; }));
+  var csv=rows.map(function(r){return r.join(',');}).join('\n');
+  var a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); a.download='gorakhpur-bus-log.csv'; a.click();
+  setTimeout(function(){URL.revokeObjectURL(a.href);},2000);
+};
+
+/* ================= INIT + LOOP ================= */
+(function init(){
+  var sel=document.getElementById('alertStop');
+  STOPS.forEach(function(s){ var o=document.createElement('option'); o.value=s.id; o.textContent=s.name; sel.appendChild(o); });
+  sel.value='univ';
+  initMap(); renderChips(); renderBuses(); renderStops(); renderSide(); renderAdmin(); applyUser();
+  /* seed a small history so admin doesn't open empty */
+  var seedStops=['gol','univ','brd','jn','gnt'];
+  for(var i=0;i<5;i++){ var b=buses[i%buses.length]; logTrip(b, seedStops[i]); state.trips[i].time=new Date(Date.now()-(5-i)*9*60000); state.trips[i].hour=state.trips[i].time.getHours(); }
+  renderSide(); renderAdmin();
+  setInterval(function(){
+    step(1);
+    buses.forEach(function(b){ var m=busMarkers[b.id]; if(m&&map){ var pos=posAt(ROUTE[b.routeId],b.dist); m.setLatLng([pos.lat,pos.lng]); } });
+    if(state.follow&&state.selectedBus&&map){ var b=busById(state.selectedBus); var p=posAt(ROUTE[b.routeId],b.dist); map.panTo([p.lat,p.lng]); }
+    renderBuses(); renderStops(); renderSide();
+    if(state.view==='admin') renderAdmin();
+  },1000);
+  function tickClock(){
+    var d=new Date();
+    document.getElementById('clock').textContent=d.toLocaleTimeString('en-IN',{hour12:false});
+    document.getElementById('clockDate').textContent=d.toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'})+' · Traffic '+Math.round(trafficFactor()*100)+'%';
+  }
+  tickClock(); setInterval(tickClock,1000);
+  setTimeout(function(){ toast('Live tracking is on','6 buses are moving across Gorakhpur right now. Tap any bus or stop on the map.'); },700);
+})();
+</script>
+</body>
+</html>
